@@ -1,0 +1,423 @@
+// ─── SkillBridge Prisma Schema ──────────────────────────────────────────────
+// Production-ready schema for hackathon platform with RBAC, profiles,
+// skills, jobs, applications, and mentorship tracking.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ──────────────────────────────────────────────────────────────────
+
+enum Role {
+  STUDENT
+  INDUSTRY
+  ACADEMICIAN
+  ADMIN
+}
+
+enum ApplicationStatus {
+  PENDING
+  REVIEWING
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+}
+
+enum MentorshipStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum HackathonStatus {
+  DRAFT
+  OPEN
+  IN_PROGRESS
+  JUDGING
+  COMPLETED
+}
+
+enum ImmersionType {
+  INDUSTRY_IMMERSION
+  FACULTY_DEVELOPMENT
+  SUMMER_INTERNSHIP
+}
+
+enum ImmersionStatus {
+  OPEN
+  CLOSED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum ImmersionApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum CollaborationType {
+  CONSULTANCY
+  STUDENT_PROJECT
+  RESEARCH_JOINT
+  THESIS_GUIDANCE
+}
+
+enum CollaborationStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+// ─── Models ─────────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  password      String?
+  image         String?
+  role          Role      @default(STUDENT)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // NextAuth relation fields (optional for Credentials provider)
+  accounts Account[]
+  sessions Session[]
+
+  // Domain relations
+  profile          Profile?
+  jobPostings      Job[]              @relation("IndustryJobs")
+  applications     Application[]
+  mentorships      Mentorship[]       @relation("Mentee")
+  mentorshipsOwned Mentorship[]       @relation("Mentor")
+  hackathonsOwned  Hackathon[]        @relation("Organizer")
+  immersionsPosted     IndustryImmersion[]  @relation("ImmersionOrganizer")
+  immersionApps        ImmersionApplication[]
+  researchPosted       ResearchCollaboration[] @relation("ResearchOrganizer")
+  researchApps         ResearchApplication[]
+  credentialsSubmitted CredentialVerification[] @relation("CredentialHolder")
+  credentialsVerified  CredentialVerification[] @relation("CredentialVerifier")
+
+  @@map("users")
+}
+
+// ─── NextAuth Models ────────────────────────────────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ─── Domain Models ──────────────────────────────────────────────────────────
+
+model Profile {
+  id          String  @id @default(cuid())
+  userId      String  @unique
+  bio         String? @db.Text
+  headline    String?
+  location    String?
+  website     String?
+  githubUrl   String?
+  linkedinUrl String?
+  avatarUrl   String?
+  university  String?
+  company     String?
+  experience  String? @db.Text
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skills     SkillOnProfile[]
+
+  @@map("profiles")
+}
+
+model Skill {
+  id    String @id @default(cuid())
+  name  String @unique
+  category String?
+
+  profiles  SkillOnProfile[]
+  jobs      SkillOnJob[]
+  immersions SkillOnImmersion[]
+  research  SkillOnResearch[]
+
+  @@map("skills")
+}
+
+model SkillOnProfile {
+  profileId String
+  skillId   String
+  level     Int? // 1-5 proficiency
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  skill   Skill   @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([profileId, skillId])
+  @@map("skill_on_profile")
+}
+
+model Job {
+  id          String   @id @default(cuid())
+  title       String
+  description String   @db.Text
+  company     String
+  location    String?
+  isRemote    Boolean  @default(false)
+  salary      String?
+  jobType     String?  // FULL_TIME, PART_TIME, INTERNSHIP
+  isActive    Boolean  @default(true)
+  postedById  String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  postedBy     User          @relation("IndustryJobs", fields: [postedById], references: [id])
+  applications Application[]
+  skills       SkillOnJob[]
+
+  @@map("jobs")
+}
+
+model SkillOnJob {
+  jobId   String
+  skillId String
+
+  job   Job   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  skill Skill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([jobId, skillId])
+  @@map("skill_on_job")
+}
+
+model Application {
+  id          String            @id @default(cuid())
+  userId      String
+  jobId       String
+  status      ApplicationStatus @default(PENDING)
+  coverLetter String?           @db.Text
+  resumeUrl   String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job  Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, jobId])
+  @@map("applications")
+}
+
+model Mentorship {
+  id        String           @id @default(cuid())
+  mentorId  String
+  menteeId  String
+  status    MentorshipStatus @default(PENDING)
+  notes     String?          @db.Text
+  startDate DateTime?
+  endDate   DateTime?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  mentor User @relation("Mentor", fields: [mentorId], references: [id])
+  mentee User @relation("Mentee", fields: [menteeId], references: [id])
+
+  @@unique([mentorId, menteeId])
+  @@map("mentorships")
+}
+
+model Hackathon {
+  id          String           @id @default(cuid())
+  title       String
+  description String           @db.Text
+  status      HackathonStatus  @default(DRAFT)
+  startDate   DateTime
+  endDate     DateTime
+  location    String?
+  isVirtual   Boolean          @default(false)
+  maxTeamSize Int?
+  organizerId String
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  organizer User @relation("Organizer", fields: [organizerId], references: [id])
+
+  @@map("hackathons")
+}
+
+// ─── Industry Immersion & FDP ───────────────────────────────────────────────
+
+model IndustryImmersion {
+  id          String            @id @default(cuid())
+  title       String
+  description String            @db.Text
+  type        ImmersionType     @default(INDUSTRY_IMMERSION)
+  status      ImmersionStatus   @default(OPEN)
+  company     String
+  location    String?
+  isRemote    Boolean           @default(false)
+  duration    String?           // e.g. "2 weeks", "3 months"
+  stipend     String?
+  startDate   DateTime?
+  endDate     DateTime?
+  organizerId String
+  maxSeats    Int?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  organizer    User                 @relation("ImmersionOrganizer", fields: [organizerId], references: [id])
+  applications ImmersionApplication[]
+  skills       SkillOnImmersion[]
+
+  @@map("industry_immersions")
+}
+
+model SkillOnImmersion {
+  immersionId String
+  skillId     String
+
+  immersion IndustryImmersion @relation(fields: [immersionId], references: [id], onDelete: Cascade)
+  skill     Skill             @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([immersionId, skillId])
+  @@map("skill_on_immersion")
+}
+
+model ImmersionApplication {
+  id          String                    @id @default(cuid())
+  userId      String
+  immersionId String
+  status      ImmersionApplicationStatus @default(PENDING)
+  statement   String?                   @db.Text
+  resumeUrl   String?
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  immersion IndustryImmersion @relation(fields: [immersionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, immersionId])
+  @@map("immersion_applications")
+}
+
+// ─── Research Collaboration Hub ─────────────────────────────────────────────
+
+model ResearchCollaboration {
+  id          String              @id @default(cuid())
+  title       String
+  description String              @db.Text
+  type        CollaborationType   @default(CONSULTANCY)
+  status      CollaborationStatus @default(OPEN)
+  field       String?             // e.g. "Computer Vision", "NLP"
+  duration    String?
+  budget      String?
+  organizerId String
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  organizer     User                 @relation("ResearchOrganizer", fields: [organizerId], references: [id])
+  applications  ResearchApplication[]
+  skills        SkillOnResearch[]
+
+  @@map("research_collaborations")
+}
+
+model SkillOnResearch {
+  collaborationId String
+  skillId         String
+
+  collaboration ResearchCollaboration @relation(fields: [collaborationId], references: [id], onDelete: Cascade)
+  skill         Skill                 @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([collaborationId, skillId])
+  @@map("skill_on_research")
+}
+
+model ResearchApplication {
+  id              String   @id @default(cuid())
+  userId          String
+  collaborationId String
+  statement       String?  @db.Text
+  proposalUrl     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  collaboration ResearchCollaboration @relation(fields: [collaborationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, collaborationId])
+  @@map("research_applications")
+}
+
+// ─── Credential Verification ────────────────────────────────────────────────
+
+enum CredentialStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+model CredentialVerification {
+  id          String           @id @default(cuid())
+  userId      String
+  title       String           // e.g. "AWS Solutions Architect", "Google ML Certificate"
+  issuer      String           // e.g. "Amazon Web Services"
+  type        String?          // e.g. "CERTIFICATION", "DEGREE", "COURSE", "ACHIEVEMENT"
+  issuedDate  DateTime?
+  expiryDate  DateTime?
+  credentialUrl String?        // URL to verify the credential
+  documentUrl   String?        // Uploaded document / proof
+  status      CredentialStatus @default(PENDING)
+  verifiedById String?
+  verifiedAt  DateTime?
+  rejectReason String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  holder       User @relation("CredentialHolder", fields: [userId], references: [id], onDelete: Cascade)
+  verifiedBy   User? @relation("CredentialVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
+
+  @@map("credential_verifications")
+}
