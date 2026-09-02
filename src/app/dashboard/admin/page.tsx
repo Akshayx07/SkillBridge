@@ -105,9 +105,9 @@ export default async function AdminDashboard() {
       { name: string; required_count: bigint }[]
     >`
       SELECT s.name, COUNT(DISTINCT sj."jobId") as required_count
-      FROM "SkillOnJob" sj
-      JOIN "Skill" s ON s.id = sj."skillId"
-      LEFT JOIN "SkillOnProfile" sp ON sp."skillId" = s.id
+      FROM "skill_on_job" sj
+      JOIN "skills" s ON s.id = sj."skillId"
+      LEFT JOIN "skill_on_profile" sp ON sp."skillId" = s.id
       LEFT JOIN "profiles" p ON p.id = sp."profileId"
       LEFT JOIN "users" u ON u.id = p."userId" AND u.role = 'STUDENT'
       WHERE u.id IS NOT NULL
