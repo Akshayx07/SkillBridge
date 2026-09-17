@@ -34,4 +34,5 @@ yarn-error.log*
 next-env.d.ts
 .neon
 
-.vercel
+# local planning / presentation docs (kept out of version control)
+docs/
